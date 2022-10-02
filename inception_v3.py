@@ -18,6 +18,7 @@ from sys import stdout
 import sys
 from torch.utils.data import Dataset
 import numpy as np
+import Send_DB as db
 
 cudnn.benchmark = True
 plt.ion()  # 대화형 모드
@@ -121,6 +122,7 @@ def train_model(model, criterion, optimizer, scheduler,early_stop, num_epochs):
     val_acc_arr = []
     val_loss_arr = []
     escape = False
+    send_db = db.SendLog_ToMongo()
 
     best_model_wts = copy.deepcopy(model.state_dict())
     best_acc = 0.0
@@ -225,6 +227,8 @@ def train_model(model, criterion, optimizer, scheduler,early_stop, num_epochs):
 
             epoch_loss = running_loss / dataset_sizes[phase]
             epoch_acc = running_corrects / dataset_sizes[phase]
+            
+            
             # 배열에 각각 저장
             if phase == 'train':
                 acc_arr.append(epoch_acc)
@@ -232,9 +236,18 @@ def train_model(model, criterion, optimizer, scheduler,early_stop, num_epochs):
             else:
                 val_acc_arr.append(epoch_acc)
                 val_loss_arr.append(epoch_loss)
+                db_val_acc = epoch_acc
+                db_val_loss = epoch_loss
 
             print(f'{phase} Loss: {epoch_loss:.3f} Acc: {epoch_acc:.3f}')
             print(f'{phase} Loss: {epoch_loss:.3f} Acc: {epoch_acc:.3f}', file=f)
+            send_db.on_epoch_end(epoch=epoch,logs={
+                'epoch': epoch,
+                'loss': epoch_loss,
+                'accuracy': epoch_acc,
+                'val_loss': db_val_loss,
+                'val_accuracy': db_val_acc
+            })
 
             if phase == 'valid' and epoch_acc > best_acc:
                 best_acc = epoch_acc
