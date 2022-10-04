@@ -1,6 +1,6 @@
 # License: BSD
 # Author: Sasank Chilamkurthy
-#Adam으로 바꾸고, batch_size = 8 -> 16, ReLU와 Dropout 추가
+# Adam으로 바꾸고, batch_size = 8 -> 16, ReLU와 Dropout 추가
 from __future__ import print_function, division
 
 import torch
@@ -18,25 +18,24 @@ from sys import stdout
 import sys
 from torch.utils.data import Dataset
 import numpy as np
-import Send_DB as db
+from Send_Mongo import SendLog_ToMongo
 
 cudnn.benchmark = True
 plt.ion()  # 대화형 모드
 
 # print(torch.cuda.is_available())
 
-experiment_count = 7
-#하이퍼파라미터 변수
+experiment_count = 10
+# 하이퍼파라미터 변수
 lr = 0.001
 early_stop_patience = 10
 batch_size = 32
-sgd_momentum = 0.1
+sgd_momentum = 0.2
 lr_scheduler_gamma = 0.1
 lr_scheduler_step = 5
 epoch = 50
-dropout = 0.2
+dropout = 0.3
 fc_linear_node = 50
-
 
 # 학습을 위해 데이터 증가(augmentation) 및 일반화(normalization)
 # 검증을 위한 일반화
@@ -63,7 +62,7 @@ data_transforms = {
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ]),
 }
-f = open('results/_'+str(experiment_count)+'.txt', 'w')
+f = open('results/_' + str(experiment_count) + '.txt', 'w')
 data_dir = './mel_images/melanoma'
 test_data_dir = './mel_images/melanoma/test'
 # train: 데이터, val: 데이터 이렇게 딕셔너리로 구성되어 있음 (x=train or val)
@@ -93,7 +92,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # iter() => iter의 매개변수(배열)을 차례대로(배치사이즈만큼 8) 가져와서 두 변수에 담아준다.
 inputs, classes = next(iter(dataloaders['train']))
 
-
 print('Images Load Compelete')
 
 
@@ -113,8 +111,17 @@ class EarlyStopping:
     def is_stop(self):
         return self.patience >= self.patience_limit
 
+send_db = SendLog_ToMongo(data={
+    "batch_size": batch_size,
+    "learning_rate": lr,
+    "sgd_momentum":sgd_momentum,
+    "lr_scheduler_gamma":lr_scheduler_gamma,
+    "lr_scheduler_step":lr_scheduler_step,
+    "epoch": 50,
+    "experiment_count":experiment_count
+})
 
-def train_model(model, criterion, optimizer, scheduler,early_stop, num_epochs):
+def train_model(model, criterion, optimizer, scheduler, early_stop, num_epochs):
     since = time.time()
     # 그래프그리기위한 배열 변수
     acc_arr = []
@@ -122,7 +129,7 @@ def train_model(model, criterion, optimizer, scheduler,early_stop, num_epochs):
     val_acc_arr = []
     val_loss_arr = []
     escape = False
-    send_db = db.SendLog_ToMongo()
+
 
     best_model_wts = copy.deepcopy(model.state_dict())
     best_acc = 0.0
@@ -151,7 +158,7 @@ def train_model(model, criterion, optimizer, scheduler,early_stop, num_epochs):
             # 통계
             running_loss += loss.item() * inputs.size(0)
             running_corrects += torch.sum(preds == labels.data)
-            stdout.write("\r=======" + str(count) + "/" + str(len(dataloaders['train'])-1) + "  progressed=======")
+            stdout.write("\r=======" + str(count) + "/" + str(len(dataloaders['train']) - 1) + "  progressed=======")
             stdout.flush()
             count += 1
 
@@ -210,10 +217,10 @@ def train_model(model, criterion, optimizer, scheduler,early_stop, num_epochs):
                 running_corrects += torch.sum(preds == labels.data)
                 if phase == "train":
                     stdout.write("\r(" + str(phase) + ")=======" + str(count) + "/" + str(
-                        len(dataloaders['train'])-1) + "progressed=======")
+                        len(dataloaders['train']) - 1) + "progressed=======")
                 else:
                     stdout.write("\r(" + str(phase) + ")=======" + str(count) + "/" + str(
-                        len(dataloaders['valid'])-1) + "progressed=======")
+                        len(dataloaders['valid']) - 1) + "progressed=======")
                 stdout.flush()
                 count += 1
             if phase == 'train':
@@ -227,27 +234,29 @@ def train_model(model, criterion, optimizer, scheduler,early_stop, num_epochs):
 
             epoch_loss = running_loss / dataset_sizes[phase]
             epoch_acc = running_corrects / dataset_sizes[phase]
-            
-            
+
             # 배열에 각각 저장
             if phase == 'train':
-                acc_arr.append(epoch_acc)
-                loss_arr.append(epoch_loss)
+                acc_arr.append(epoch_acc.item())#근데 얘는 돼
+                loss_arr.append(epoch_loss)#얘는 안돼
             else:
-                val_acc_arr.append(epoch_acc)
+                val_acc_arr.append(epoch_acc.item())
                 val_loss_arr.append(epoch_loss)
-                db_val_acc = epoch_acc
-                db_val_loss = epoch_loss
+                print()
+                print("Send to DB...")
+                send_db.on_epoch_end(epoch=epoch, logs={
+                    'epoch': epoch,
+                    'loss': loss_arr,
+                    'accuracy': acc_arr,
+                    'val_loss': val_loss_arr,
+                    'val_accuracy': val_acc_arr
+                }, early_stopped=escape)
+                print()
+                print("DB Send Compelete")
 
             print(f'{phase} Loss: {epoch_loss:.3f} Acc: {epoch_acc:.3f}')
             print(f'{phase} Loss: {epoch_loss:.3f} Acc: {epoch_acc:.3f}', file=f)
-            send_db.on_epoch_end(epoch=epoch,logs={
-                'epoch': epoch,
-                'loss': epoch_loss,
-                'accuracy': epoch_acc,
-                'val_loss': db_val_loss,
-                'val_accuracy': db_val_acc
-            })
+
 
             if phase == 'valid' and epoch_acc > best_acc:
                 best_acc = epoch_acc
@@ -268,34 +277,23 @@ def train_model(model, criterion, optimizer, scheduler,early_stop, num_epochs):
     # 가장 나은 모델 가중치를 불러옴
     model.load_state_dict(best_model_wts)
 
-    # 이러한에러가뜨는원인은리스트의원소가파이토치텐서이기때문이다.따라서에러를해결하기위해서는torch.stack()을사용해서리스트를 1차원텐서로바꿔주면된다.
-    # out_acc_arr = torch.stack(acc_arr,0)
-    # out_val_acc_arr = torch.stack(val_acc_arr, 0)
-    # out_loss_arr = torch.stack(loss_arr,0)
-    # out_val_loss_arr = torch.stack(val_loss_arr, 0)
 
-    # 다른 방법 찾음(아직 시도안함)
-    # acc_arr = [a.squeeze().tolist() for a in acc_arr]
-    # loss_arr = [a.tolist() for a in loss_arr]
-    # val_acc_arr = [a.squeeze().tolist() for a in val_acc_arr]
-    # val_loss_arr = [a.tolist() for a in val_loss_arr]
-    #
     # # 학습 결과 그래프로 출력
-    # plt.plot(acc_arr)
-    # plt.plot(val_acc_arr)
-    # plt.ylabel('accuracy')
-    # plt.xlabel('epoch')
-    # plt.legend(['train_accuracy', 'val_accuracy'])
-    #
-    # plt.plot(loss_arr)
-    # plt.plot(val_loss_arr)
-    # plt.ylabel('loss')
-    # plt.xlabel('epoch')
-    # plt.legend(['train_loss', 'val_loss'])
-    # plt.show()
+    plt.plot(acc_arr)
+    plt.plot(val_acc_arr)
+    plt.ylabel('accuracy')
+    plt.xlabel('epoch')
+    plt.legend(['train_accuracy', 'val_accuracy'])
+
+    plt.plot(loss_arr)
+    plt.plot(val_loss_arr)
+    plt.ylabel('loss')
+    plt.xlabel('epoch')
+    plt.legend(['train_loss', 'val_loss'])
+    plt.show()
 
     # 해당 가중치를 저장
-    torch.save(model.state_dict(), './save_models/inception/best_epoch_'+str(experiment_count)+'.pth')
+    torch.save(model.state_dict(), './save_models/inception/best_epoch_' + str(experiment_count) + '.pth')
 
     return model
 
@@ -315,10 +313,11 @@ def Test_Model(model):
         total += labels.size(0)
         correct += torch.sum(predicted == labels.data.cuda())
         stdout.write("\r(Test)=======" + str(count) + "/" + str(
-            len(test_dataloaders)-1) + "progressed=======")
-        count+=1
+            len(test_dataloaders) - 1) + "progressed=======")
+        count += 1
         stdout.flush()
 
+    send_db.on_test_end(test_acc=100*float(correct)/total)
     print()
     print('Accuracy of test images: %f %%' % (100 * float(correct) / total), file=f)
     print('Accuracy of test images: %f %%' % (100 * float(correct) / total))
@@ -336,15 +335,15 @@ print(f'[epoch] : {epoch}')
 print(f'[dropout] : {dropout}')
 print(f'[fc_linear_node] : {fc_linear_node}')
 
-print(f'[Learning_Rate] : {lr}',file=f)
-print(f'[early_stop_patience] : {early_stop_patience}',file=f)
-print(f'[batch_size] : {batch_size}',file=f)
-print(f'[sgd_momentum] : {sgd_momentum}',file=f)
-print(f'[lr_scheduler_gamma] : {lr_scheduler_gamma}',file=f)
-print(f'[lr_scheduler_step] : {lr_scheduler_step}',file=f)
-print(f'[epoch] : {epoch}',file=f)
-print(f'[dropout] : {dropout}',file=f)
-print(f'[fc_linear_node] : {fc_linear_node}',file=f)
+print(f'[Learning_Rate] : {lr}', file=f)
+print(f'[early_stop_patience] : {early_stop_patience}', file=f)
+print(f'[batch_size] : {batch_size}', file=f)
+print(f'[sgd_momentum] : {sgd_momentum}', file=f)
+print(f'[lr_scheduler_gamma] : {lr_scheduler_gamma}', file=f)
+print(f'[lr_scheduler_step] : {lr_scheduler_step}', file=f)
+print(f'[epoch] : {epoch}', file=f)
+print(f'[dropout] : {dropout}', file=f)
+print(f'[fc_linear_node] : {fc_linear_node}', file=f)
 
 # 모델 생성
 model_ft = models.inception_v3(pretrained=True)
@@ -376,11 +375,11 @@ model_ft = model_ft.to(device)
 print("Fully Connected Layer: done")
 # CrossEntropy같은경우에는 마지막 레이어 노드수가 2개 이상이여야 한다.
 
-#CrossEntropyLoss = logSoftmax + NLLLoss
+# CrossEntropyLoss = logSoftmax + NLLLoss
 criterion = nn.CrossEntropyLoss()
 # 모든 매개변수들이 최적화되었는지 관찰
 # l2 규제 (가중치 감쇠)
-#momentum: weight 를 조정 (관성)
+# momentum: weight 를 조정 (관성)
 optimizer_ft = optim.SGD(model_ft.parameters(), lr=lr, momentum=sgd_momentum)
 
 early_stop = EarlyStopping(patience=early_stop_patience)
@@ -392,7 +391,7 @@ print("criterion, optimizer, lr_scheduler ready : done")
 
 print('Model Load Compelete')
 
-model_ft = train_model(model_ft, criterion, optimizer_ft, exp_lr_scheduler,early_stop,
+model_ft = train_model(model_ft, criterion, optimizer_ft, exp_lr_scheduler, early_stop,
                        num_epochs=epoch)
 
 # visualize_model(model_ft)
