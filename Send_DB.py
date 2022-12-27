@@ -1,6 +1,7 @@
 from pymongo import MongoClient
 
-mongo_url = "mongodb+srv://Oldentomato:jowoosung123@examplecluster.g7o5t.mongodb.net/?retryWrites=true&w=majority"
+#encrypted
+I6x9Mg7Fznb+6gS7htnrPSGqsu0RYpZZAPLvRZNw1nqIGVr9YFCNjM6jQq5jT06zlRq7PqucDDzVMPefzXUXQpiB6nUIoojujDuetDAUhBwbaCV+DG9KIUwXTs/mPcOyZdAZsuofVwu9Sef0BMnMH+/8BRqj4xo3ZV02quYA63py7yg2CnyZzV0fIWPycYQF8I/zQhQ2w5e/foqpDpNQCshwuI3LI1mwuZIhzsthPAHRUEFkC06F0eWA6PsG1MGFxCz2zBJs9/Kds00Gr+6M+QmYXLPhAhjHFSiS/1vRHFjMzGb6SLm2Ne8/aZN5wvc6EbjO4Em5Nn4qQ8vkEaEOwwgxOkkJ/CrbSILR6H7IHZT0QKDC1AebFKxSLvF0O53tMiO44hG1YelOvJtmP0R77fv8EgLB+1Oj362JAboCrS1nusjEVxeGoiDSjAZABwVazNtfmWckNqKjR7h5sakX5r1yn9hPXdsXhhx6jtS+qtUcq68DcKrZrI1Unq0FmZBIDO48Mg+WvyWKjg/sKPN7XVm4rJUHDklmZzSOf/10PKzqYvh1l4f6ErwPGG7MzvYoa26upkbou/7Zji+q9nvOcAHndZ+Srlgkdq8HZD1moMmd7rnk2gzEVCtPmY/JeQoYDl4gaImDRDxEHVF6dMMe2jad/n1Uvg43nszjsx3lcEg=
 client = MongoClient(host=mongo_url, port=27017)
 db = client['Model_Database']
 collection = db['pytorch']
